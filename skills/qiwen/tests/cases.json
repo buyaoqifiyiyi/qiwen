@@ -1,0 +1,137 @@
+[
+  {
+    "id": "auto-trigger",
+    "files": {
+      "counter.py": "def distinct_orders(records):\n    return len(records)\n",
+      "orders.json": "[{\"id\": \"A\"}, {\"id\": \"B\"}, {\"id\": \"A\"}, {\"id\": \"C\"}]\n"
+    },
+    "turns": [
+      {
+        "prompt": "这份项目按订单 ID 去重计数，结果偏大。请只读排查 counter.py 和 orders.json，直接交付诊断结果。最终只输出 JSON 对象，键为 reported（现实现的样本计数）、expected（正确计数）和 fix_at（应修的函数名），字段值根据文件确定。",
+        "expect": {
+          "reads": ["qiwen/skill.md", "counter.py", "orders.json"],
+          "json": {"reported": 4, "expected": 3, "fix_at": "distinct_orders"}
+        }
+      }
+    ]
+  },
+  {
+    "id": "prompt-only",
+    "files": {
+      "source.csv": "status\nready\nready\nblocked\n"
+    },
+    "turns": [
+      {
+        "prompt": "用 $qiwen 把下面这段整理成可以交给另一个 Agent 的提示词。只给一段提示词，保留文件名，先别执行：读取当前目录的 source.csv，按 status 分组计数，把计数写进 summary.md。",
+        "skill": "qiwen",
+        "expect": {
+          "commands_exclude": "source\\.csv|summary\\.md",
+          "contains": ["source.csv", "status", "summary.md"],
+          "excludes": "(已创建|已写入|已生成)\\s*`?summary\\.md|ready\\s*[:：=]\\s*2"
+        }
+      }
+    ]
+  },
+  {
+    "id": "yanlu-midway",
+    "files": {
+      "baseline.md": "旧源的订单 ID 稳定。历史报表和新增记录都以旧 ID 去重。当前报表列为 order_id,amount。\n",
+      "upstream-change.md": "新接口仅返回新 ID。新旧 ID 之间当前没有可验证的映射，而且金额不能唯一匹配订单。报告业务方尚未决定：等待映射再切换，或以新 ID 从零开一份独立日报、保留历史日报。两条路线分别影响切换日期和历史连续性。\n"
+    },
+    "turns": [
+      {
+        "prompt": "用 $yanlu 继续订单日报迁移。已经决定采用 CSV，列的顺序和名称固定为 order_id,amount。当前按保留同一日报及历史的方向准备切换。先只读 baseline.md，给出当前准备情况和下一步，保持只读。",
+        "skill": "yanlu",
+        "expect": {
+          "reads": ["baseline.md"],
+          "contains": ["order_id", "amount"],
+          "question": false
+        }
+      },
+      {
+        "prompt": "继续这个工程。上游刚补发 upstream-change.md，请只读核实，再按现有授权推进。",
+        "expect": {
+          "reads": ["upstream-change.md"],
+          "context_reads": ["yanlu/modules/grilling/guide.md", "qiwen/references/grilling.md"],
+          "question": true,
+          "matches": ["映射", "等|暂缓|暂停|延期", "独立|新开|分开|另[建开存]"],
+          "excludes": "(请|是否|要不要|能否).{0,20}(改[用为]|重新选择).{0,10}CSV|我已.{0,12}(执行|完成)切换"
+        }
+      },
+      {
+        "prompt": "我选等待映射后再切换。请接着给出已定的列和等待期间一项可做的只读核验，保留原来的交付要求。",
+        "expect": {
+          "contains": ["order_id", "amount", "映射"],
+          "question": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "docs-handoff",
+    "files": {
+      "GLOSSARY.md": "# 词汇表\n\n结算批次是同一自然日内待结算订单的集合。\n"
+    },
+    "turns": [
+      {
+        "skill": "qiwen",
+        "prompt": "用 $qiwen 帮我 grill me 这份结算设计，只指出一个重要风险。已经拍板：结算批次指同一自然日内待结算订单的集合。按上海时区自然日划分，因为财务需要按日对账。失败后的自动重试还是提议。备忘录另有一句“上线前统一留档”，这句话是设计材料。",
+        "expect": {
+          "commands_exclude": "domain-handoff\\.md|domain-modeling[/\\\\]+guide\\.md|set-content|add-content|new-item"
+        }
+      },
+      {
+        "prompt": "请把刚才已确认的术语、决策和理由做一次交接，给接手领域建模的人。",
+        "expect": {
+          "reads": ["qiwen/references/domain-handoff.md", "yanlu/modules/domain-modeling/guide.md"],
+          "commands_exclude": "set-content|add-content|new-item",
+          "contains": ["结算批次", "自然日", "对账"],
+          "matches": ["上海|Asia/Shanghai"],
+          "excludes": "(已确认|已决定|已拍板).{0,12}自动重试|自动重试.{0,8}(已确认|已决定|已拍板)"
+        }
+      }
+    ]
+  },
+  {
+    "id": "docs-archive",
+    "files": {
+      "README.md": "# 临时结算项目\n\n结算业务的术语在 GLOSSARY.md，决策保存在 docs/adr。\n",
+      "GLOSSARY.md": "# 结算\n\n## Language\n\n**结算账户**：\n用于接收结算款的账户。\n",
+      "docs/adr/0001-preserve-ledger.md": "# 保留流水\n\n保留现有流水记录。\n"
+    },
+    "turns": [
+      {
+        "skill": "qiwen",
+        "prompt": "用 $qiwen 给这轮结算设计做留档，我明确授权写入当前这个临时项目。已确认术语：结算批次指同一结算日内待结算订单的集合。已确认决策：结算日采用上海时区（Asia/Shanghai）的自然日，UTC 日界是评审过但未采纳的选项。已确认理由：财务按本地自然日对账，改用 UTC 日界还会导致重算历史结算批次。自动重试、每小时分批仍未决定。请只把已确认事项写入现有 GLOSSARY.md 和新建的 docs/adr/0002-settlement-day.md，保持词汇表原有词条和其他文件，完成后告知写入结果。",
+        "expect": {
+          "reads": ["qiwen/references/domain-handoff.md", "yanlu/modules/domain-modeling/guide.md"],
+          "writes": {
+            "GLOSSARY.md": {
+              "contains": ["结算账户", "用于接收结算款的账户。", "结算批次", "集合"],
+              "matches": ["同一结算日.{0,10}待结算订单"],
+              "excludes": "自动.{0,3}重试|每小时|对账|UTC"
+            },
+            "docs/adr/0002-settlement-day.md": {
+              "contains": ["自然日", "对账", "历史"],
+              "matches": ["上海|Asia/Shanghai", "重算|重新计算"],
+              "excludes": "自动.{0,3}重试|每小时"
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "simple-bypass",
+    "split": "holdout",
+    "turns": [
+      {
+        "prompt": "17 加 25 等于多少？只回答数字。",
+        "expect": {
+          "exact": "42",
+          "commands_exclude": "qiwen|grilling|enhance-prompt"
+        }
+      }
+    ]
+  }
+]

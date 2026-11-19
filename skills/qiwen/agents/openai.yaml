@@ -1,0 +1,6 @@
+interface:
+  display_name: "启问"
+  short_description: "提示词增强、关键需求澄清与方案质询"
+  default_prompt: "用 $qiwen 把以下想法整理成可直接使用的提示词。"
+policy:
+  allow_implicit_invocation: true
